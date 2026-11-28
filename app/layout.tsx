@@ -3,8 +3,9 @@ import "@fontsource-variable/inter";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: { default: "Kindergarden Survival — Вход", template: "%s · Kindergarden Survival" },
-  description: "Академия супернаставников — браузерная игра для педагогов.",
+  title: { default: "Вход · Сад № 0", template: "%s · Сад № 0" },
+  description: "Сад № 0. Всё пошло по плану. Почти. Сюжетная игра для сотрудников детских садов «Синергия».",
+  icons: { icon: "/brand/rhino.webp" },
 };
 
 export default function Layout({ children }: { children: React.ReactNode }) {

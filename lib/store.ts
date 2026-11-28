@@ -4,6 +4,7 @@ import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import type { Account, AuthField, FieldErrors } from "./types";
+import { specializationLabels } from "./types.ts";
 
 const derive = promisify(scrypt);
 const sessionSeconds = 60 * 60 * 24 * 14;
@@ -12,7 +13,7 @@ const identityKey = (value: string) => value.trim().normalize("NFKC").toLowerCas
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/u;
 
 // Next development reloads modules. Keep one writer for the embedded database.
-const singleton = globalThis as typeof globalThis & { academyDb?: Promise<PGlite> };
+const singleton = globalThis as typeof globalThis & { academyDb?: Promise<PGlite>; collectionDb?: Promise<PGlite> };
 async function openDatabase() {
   const directory = process.env.ACADEMY_DATA_DIR || path.join(process.cwd(), ".data", "postgres");
   if (directory !== "memory://") await mkdir(directory, { recursive: true });
@@ -27,7 +28,7 @@ async function openDatabase() {
       id uuid PRIMARY KEY, username text NOT NULL, username_key text NOT NULL UNIQUE,
       first_name text NOT NULL, last_name text NOT NULL, email text NOT NULL,
       email_key text NOT NULL UNIQUE, password_salt text NOT NULL, password_hash text NOT NULL,
-      role text NOT NULL CHECK (role IN ('admin','methodist','teacher'))
+      role text NOT NULL
     );
     CREATE TABLE IF NOT EXISTS sessions (
       token_hash text PRIMARY KEY, account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
@@ -38,8 +39,34 @@ async function openDatabase() {
   return db;
 }
 export function database() {
-  return singleton.academyDb ??= openDatabase().catch((error) => {
+  singleton.academyDb ??= openDatabase().catch((error) => {
     delete singleton.academyDb;
+    throw error;
+  });
+  return singleton.collectionDb ??= singleton.academyDb.then(async (db) => {
+    // Apply the complete migration atomically, including on a running development connection.
+    await db.exec(`
+      DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = 'accounts' AND column_name = 'specialization') THEN
+          ALTER TABLE accounts DROP CONSTRAINT IF EXISTS accounts_role_check;
+          UPDATE accounts SET role = 'employee' WHERE role = 'teacher';
+          ALTER TABLE accounts ADD CONSTRAINT accounts_role_check CHECK (role IN ('admin','methodist','employee'));
+          ALTER TABLE accounts ADD COLUMN specialization text
+            CHECK (specialization IN ('educator','assistant','specialist','other'));
+          ALTER TABLE accounts ADD CHECK (role <> 'methodist' OR specialization IS NULL);
+        END IF;
+      END $$;
+      CREATE TABLE IF NOT EXISTS adventure_completions (
+        account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        adventure_id text NOT NULL,
+        completed_at timestamptz NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (account_id, adventure_id)
+      );
+    `);
+    return db;
+  }).catch((error) => {
+    delete singleton.collectionDb;
     throw error;
   });
 }
@@ -56,9 +83,15 @@ export async function register(data: Input): Promise<{ errors: FieldErrors } | {
   const lastName = input(data, "lastName").trim();
   const email = input(data, "email").trim();
   const password = input(data, "password");
+  const role = input(data, "role");
+  const specialization = role === "employee" ? input(data, "specialization") : null;
   const usernameKey = identityKey(username);
   const emailKey = identityKey(email);
   const errors: FieldErrors = {};
+  if (role !== "methodist" && role !== "employee") errors.role = "Выберите роль.";
+  if (specialization !== null && !Object.hasOwn(specializationLabels, specialization)) {
+    errors.specialization = "Выберите специализацию.";
+  }
   if (!username || username.length > 80 || usernameKey.includes("@")) {
     errors.username = "Введите имя пользователя до 80 символов без знака @.";
   }
@@ -89,10 +122,10 @@ export async function register(data: Input): Promise<{ errors: FieldErrors } | {
   const token = randomBytes(32).toString("hex");
   const created = await db.transaction(async (tx) => {
     const result = await tx.query(`
-      INSERT INTO accounts (id, username, username_key, first_name, last_name, email, email_key, password_salt, password_hash, role)
-      SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, CASE WHEN grant_new_users_full_rights THEN 'admin' ELSE 'teacher' END
+      INSERT INTO accounts (id, username, username_key, first_name, last_name, email, email_key, password_salt, password_hash, role, specialization)
+      SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, CASE WHEN grant_new_users_full_rights THEN 'admin' ELSE $10 END, $11
       FROM application_settings WHERE singleton ON CONFLICT DO NOTHING RETURNING id`,
-      [id, username, usernameKey, firstName, lastName, email, emailKey, salt, hash.toString("hex")]);
+      [id, username, usernameKey, firstName, lastName, email, emailKey, salt, hash.toString("hex"), role, specialization]);
     if (!result.rows.length) return false;
     await insertSession(tx, id, token);
     return true;
@@ -133,7 +166,7 @@ export async function sessionAccount(token?: string): Promise<Account | null> {
   if (!token || !/^[a-f0-9]{64}$/.test(token)) return null;
   const db = await database();
   const result = await db.query<Account>(`
-    SELECT a.id, a.username, a.role FROM accounts a JOIN sessions s ON a.id = s.account_id
+    SELECT a.id, a.username, a.role, a.specialization FROM accounts a JOIN sessions s ON a.id = s.account_id
     WHERE s.token_hash = $1 AND s.expires_at > NOW()`, [digest(token)]);
   return result.rows[0] ?? null;
 }

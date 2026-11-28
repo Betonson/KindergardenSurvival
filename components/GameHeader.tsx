@@ -3,10 +3,16 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, Compass, LogOut, Settings } from "lucide-react";
+import { BookOpen, ChevronDown, Compass, LogOut, Settings, Trees } from "lucide-react";
 import { Brand } from "./Brand";
 import { roleLabels, type Account } from "@/lib/types";
 import { connectionError, submit } from "@/lib/client";
+
+const sections = [
+  { href: "/garden", label: "Мой сад", icon: Trees },
+  { href: "/adventures", label: "Приключения", icon: Compass },
+  { href: "/collection", label: "Коллекция", icon: BookOpen },
+];
 
 export function GameHeader({ account }: { account: Account }) {
   const [open, setOpen] = useState(false);
@@ -44,9 +50,11 @@ export function GameHeader({ account }: { account: Account }) {
   }
 
   return <header className="game-header">
-    <Link className="brand-link" href="/welcome" aria-label="Kindergarden Survival — приветствие"><Brand /></Link>
+    <Link className="brand-link" href="/garden" aria-label="Сад № 0 — Мой сад"><Brand /></Link>
     <nav aria-label="Основные разделы" className="main-nav">
-      <Link href="/welcome" aria-current={pathname === "/welcome" ? "page" : undefined}><Compass size={18} />Приветствие</Link>
+      {sections.map(({ href, label, icon: Icon }) => <Link key={href} href={href} aria-current={pathname === href ? "page" : undefined}>
+        <Icon size={18} aria-hidden="true" />{label}
+      </Link>)}
     </nav>
     <div className="account-nav" ref={container} onBlur={(event) => {
       if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);

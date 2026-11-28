@@ -33,7 +33,7 @@ export function AdminSettings({ initial }: { initial: boolean }) {
       <input type="checkbox" name="grantFullRights" checked={value} disabled={pending}
         onChange={(event) => { setValue(event.target.checked); setError(""); setNotice(""); }} />
       <span><strong>Выдавать новым пользователям полные права</strong>
-        <small>При включённой настройке новые пользователи становятся администраторами. При выключенной — педагогами.</small>
+        <small>При включённой настройке новый аккаунт получает роль администратора. При выключенной сохраняется выбранная при регистрации роль.</small>
       </span>
     </label>
     <div className="save-row">

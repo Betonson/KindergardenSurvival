@@ -6,7 +6,7 @@
     "dev": "next dev --webpack --hostname 127.0.0.1",
     "build": "next build --webpack",
     "start": "next start",
-    "test": "node --experimental-strip-types --test tests/accounts.test.mjs",
+    "test": "node --experimental-strip-types --test tests/accounts.test.mjs tests/collection.test.mjs",
     "typecheck": "tsc --noEmit"
   },
   "engines": { "node": ">=22.13.0" },

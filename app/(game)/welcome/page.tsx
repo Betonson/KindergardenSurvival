@@ -1,5 +1,5 @@
-export const metadata = { title: "Приветствие" };
+import { redirect } from "next/navigation";
 
 export default function Welcome() {
-  return <main className="welcome"><h1>Успешно!</h1></main>;
+  redirect("/garden");
 }

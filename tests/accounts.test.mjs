@@ -6,7 +6,7 @@ process.env.ACADEMY_DATA_DIR = "memory://";
 after(async () => (await database()).close());
 
 function details(username, email) {
-  return { username, email, firstName: "Анна", lastName: "Лесная", password: "forest-test-2026", confirmation: "forest-test-2026" };
+  return { username, email, firstName: "Анна", lastName: "Лесная", role: "employee", specialization: "educator", password: "forest-test-2026", confirmation: "forest-test-2026" };
 }
 
 test("Уникальность, выдача ролей и завершение сессий", async () => {
@@ -14,6 +14,7 @@ test("Уникальность, выдача ролей и завершение 
   const first = details("Лиса", "fox@example.test");
   const firstToken = (await register(first)).token;
   assert.equal((await sessionAccount(firstToken)).role, "admin");
+  assert.equal((await sessionAccount(firstToken)).specialization, "educator");
   assert.ok(await login({ identifier: "  ЛИСА ", password: first.password }));
   assert.ok(await login({ identifier: " FOX@example.test ", password: first.password }));
   assert.equal(await login({ identifier: first.email, password: "incorrect" }), null);
@@ -27,20 +28,28 @@ test("Уникальность, выдача ролей и завершение 
   assert.deepEqual(Object.keys((await register({ ...first, username: "НовоеИмя" })).errors), ["email"]);
   assert.deepEqual(Object.keys((await register({ ...first, email: "new@example.test" })).errors), ["username"]);
   assert.ok((await register({ ...second, confirmation: "different" })).errors.confirmation);
+  assert.ok((await register({ ...second, role: "admin" })).errors.role);
+  assert.ok((await register({ ...second, specialization: "" })).errors.specialization);
+  assert.ok((await register({ ...second, specialization: "toString" })).errors.specialization);
 
   assert.equal(await saveFullRights(firstToken, false), true);
-  const teacher = (await register(details("Педагог", "teacher@example.test"))).token;
-  const teacherAccount = await sessionAccount(teacher);
-  assert.equal(teacherAccount.role, "teacher");
-  assert.equal(await saveFullRights(teacher, true), false);
+  for (const specialization of ["educator", "assistant", "specialist", "other"]) {
+    const employee = (await register({ ...details(specialization, specialization + "@example.test"), specialization })).token;
+    const account = await sessionAccount(employee);
+    assert.equal(account.role, "employee");
+    assert.equal(account.specialization, specialization);
+    assert.equal(await saveFullRights(employee, true), false);
+  }
   assert.equal(await saveFullRights("fake-token", true), false);
-  const db = await database();
-  await db.query("UPDATE accounts SET role = 'methodist' WHERE id = $1", [teacherAccount.id]);
-  assert.equal((await sessionAccount(teacher)).role, "methodist");
-  assert.equal(await saveFullRights(teacher, true), false);
+  const methodist = (await register({ ...details("Методист", "m@example.test"), role: "methodist" })).token;
+  assert.equal((await sessionAccount(methodist)).role, "methodist");
+  assert.equal((await sessionAccount(methodist)).specialization, null);
+  assert.equal(await saveFullRights(methodist, true), false);
   assert.equal((await sessionAccount(firstToken)).role, "admin");
   assert.equal(await saveFullRights(firstToken, true), true);
-  assert.equal((await sessionAccount((await register(details("Третий", "third@example.test"))).token)).role, "admin");
+  const elevated = (await register({ ...details("Третий", "third@example.test"), role: "methodist" })).token;
+  assert.equal((await sessionAccount(elevated)).role, "admin");
+  assert.equal((await sessionAccount(elevated)).specialization, null);
   await logout(firstToken);
   assert.equal(await sessionAccount(firstToken), null);
   assert.equal(await saveFullRights(firstToken, false), false);
